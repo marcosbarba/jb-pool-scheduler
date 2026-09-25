@@ -1,0 +1,5 @@
+# Planificador diario a las 20:45 CET
+45 20 * * * cd /app && /root/.local/bin/uv run python -m jb_pool_scheduler.planner >> /proc/1/fd/1 2>&1
+
+# Ejecutor continuo cada minuto
+*/5 * * * * cd /app && /root/.local/bin/uv run python -m jb_pool_scheduler.executor >> /proc/1/fd/1 2>&1

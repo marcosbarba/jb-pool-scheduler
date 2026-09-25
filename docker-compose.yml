@@ -1,0 +1,17 @@
+services:
+  pool_scheduler:
+    build: .
+    container_name: pool_scheduler
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Madrid
+    env_file:
+      - .env
+    volumes:
+      # Persistencia de la base de datos SQLite entre recreaciones del contenedor
+      - ./data:/app/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

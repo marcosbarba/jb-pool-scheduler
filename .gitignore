@@ -1,0 +1,20 @@
+# Secretos y variables de entorno
+.env
+.env.*
+!.env.example
+
+# Base de datos SQLite y datos dinámicos
+data/*.db
+data/*.sqlite3
+data/*.db-journal
+
+# Entornos virtuales y cachés de Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
