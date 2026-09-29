@@ -29,6 +29,7 @@ class Repository:
 
     def _init_schema(self) -> None:
         with self._get_connection() as conn:
+            # 1. Crear tablas si no existen
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS temperature_samples (
@@ -51,7 +52,22 @@ class Repository:
                     key TEXT PRIMARY KEY,
                     value TEXT
                 );
+                """
+            )
 
+            # 2. Migración: agregar la columna si la tabla ya existía de antes
+            columns = [
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(temperature_samples)").fetchall()
+            ]
+            if "sensor_type" not in columns:
+                conn.execute(
+                    "ALTER TABLE temperature_samples ADD COLUMN sensor_type TEXT NOT NULL DEFAULT 'water'"
+                )
+
+            # 3. Crear índices una vez asegurada la presencia de sensor_type
+            conn.executescript(
+                """
                 CREATE INDEX IF NOT EXISTS idx_temp_query 
                 ON temperature_samples(sensor_type, recorded_at);
 
@@ -59,10 +75,6 @@ class Repository:
                 ON daily_schedules(schedule_date);
                 """
             )
-            # Migración no destructiva si la columna no existía
-            cols = [r["name"] for r in conn.execute("PRAGMA table_info(temperature_samples)").fetchall()]
-            if "sensor_type" not in cols:
-                conn.execute("ALTER TABLE temperature_samples ADD COLUMN sensor_type TEXT NOT NULL DEFAULT 'water'")
 
     def record_temperature(self, temp: float, sensor_type: str = "water", dt: datetime | None = None) -> None:
         """Registra una lectura térmica indicando si proviene de 'water' o 'air'."""

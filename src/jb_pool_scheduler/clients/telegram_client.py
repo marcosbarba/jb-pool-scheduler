@@ -80,8 +80,8 @@ class TelegramClient:
 
         message = (
             f"📋 <b>Plan de Depuración — {date_str}</b>\n\n"
-            f"💧 <b>Agua piscina:</b> {water_str}\n"
-            f"🌤️ <b>Aire exterior:</b> {air_str}\n\n"
+            f"🌤️ <b>Aire exterior:</b>\n {air_str}\n\n"
+            f"💧 <b>Agua piscina:</b>\n {water_str}\n\n"
             f"⏱️ <b>Tiempo asignado:</b> {target_hours} horas\n\n"
             f"⚡ <b>Intervalos optimizados (ESIOS PVPC):</b>\n"
             f"{intervals_formatted}"

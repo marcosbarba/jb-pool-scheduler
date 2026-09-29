@@ -3,7 +3,7 @@
 import argparse
 import logging
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -36,7 +36,7 @@ def run_planner(target_date: date | None = None, settings: Settings | None = Non
     telegram = TelegramClient(cfg)
 
     # 1. Definir fechas de referencia
-    today = date.now(tz).date()
+    today = datetime.now(tz).date()
     plan_date = target_date or (today + timedelta(days=1))
     logger.info("Iniciando planificación para %s (referencia térmica: %s)", plan_date, today)
 
