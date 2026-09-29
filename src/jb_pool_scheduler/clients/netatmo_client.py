@@ -1,7 +1,9 @@
 """Cliente para consultar la temperatura del aire exterior en Netatmo Connect."""
 
 import logging
+
 import httpx
+
 from jb_pool_scheduler.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)

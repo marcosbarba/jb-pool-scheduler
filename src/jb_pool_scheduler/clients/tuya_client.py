@@ -2,7 +2,9 @@
 
 import logging
 from typing import Any
+
 from tuya_connector import TuyaOpenAPI
+
 from jb_pool_scheduler.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)

@@ -1,7 +1,7 @@
 """Módulo de optimización económica y consolidación de franjas horarias."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 
 @dataclass(frozen=True)

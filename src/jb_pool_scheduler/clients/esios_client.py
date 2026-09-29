@@ -3,7 +3,9 @@
 import logging
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
+
 import httpx
+
 from jb_pool_scheduler.config import Settings, get_settings
 
 logger = logging.getLogger(__name__)
