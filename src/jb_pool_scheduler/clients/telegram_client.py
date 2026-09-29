@@ -2,7 +2,9 @@
 
 import logging
 from datetime import date
+
 import httpx
+
 from jb_pool_scheduler.config import Settings, get_settings
 from jb_pool_scheduler.core.optimizer import TimeInterval
 
@@ -41,7 +43,7 @@ class TelegramClient:
                         )
                     else:
                         any_success = True
-                except Exception as exc:
+                except httpx.HTTPError as exc:
                     logger.error("Fallo de red al enviar a Telegram (chat_id: %s): %s", chat_id, exc)
 
         return any_success
@@ -49,11 +51,14 @@ class TelegramClient:
     def send_planning_report(
         self,
         schedule_date: date,
-        min_water_temp: float,
         target_hours: int,
         intervals: list[TimeInterval],
+        water_min: float | None,
+        water_max: float | None,
+        air_min: float | None,
+        air_max: float | None,
     ) -> bool:
-        """Formatea y envía el reporte diario con la mínima y los tramos asignados."""
+        """Envía el reporte diario con las temperaturas mínimas y máximas de agua y aire."""
         date_str = schedule_date.strftime("%d/%m/%Y")
 
         if intervals:
@@ -62,9 +67,21 @@ class TelegramClient:
         else:
             intervals_formatted = "• Sin tramos programados"
 
+        water_str = (
+            f"Mín: <b>{water_min:.1f} °C</b> | Máx: <b>{water_max:.1f} °C</b>"
+            if water_min is not None and water_max is not None
+            else "<i>Sin datos</i>"
+        )
+        air_str = (
+            f"Mín: <b>{air_min:.1f} °C</b> | Máx: <b>{air_max:.1f} °C</b>"
+            if air_min is not None and air_max is not None
+            else "<i>Sin datos</i>"
+        )
+
         message = (
             f"📋 <b>Plan de Depuración — {date_str}</b>\n\n"
-            f"🌡️ <b>Mínima agua registrada:</b> {min_water_temp:.1f} °C\n"
+            f"💧 <b>Agua piscina:</b> {water_str}\n"
+            f"🌤️ <b>Aire exterior:</b> {air_str}\n\n"
             f"⏱️ <b>Tiempo asignado:</b> {target_hours} horas\n\n"
             f"⚡ <b>Intervalos optimizados (ESIOS PVPC):</b>\n"
             f"{intervals_formatted}"

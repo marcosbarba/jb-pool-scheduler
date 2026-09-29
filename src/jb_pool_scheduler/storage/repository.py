@@ -4,6 +4,7 @@ import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
 from jb_pool_scheduler.config import Settings, get_settings
 from jb_pool_scheduler.core.optimizer import TimeInterval
 
@@ -33,7 +34,8 @@ class Repository:
                 CREATE TABLE IF NOT EXISTS temperature_samples (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     recorded_at TEXT NOT NULL,
-                    temperature REAL NOT NULL
+                    temperature REAL NOT NULL,
+                    sensor_type TEXT NOT NULL DEFAULT 'water'
                 );
 
                 CREATE TABLE IF NOT EXISTS daily_schedules (
@@ -45,25 +47,36 @@ class Repository:
                     UNIQUE(schedule_date, start_hour, end_hour)
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_temp_recorded 
-                ON temperature_samples(recorded_at);
+                CREATE TABLE IF NOT EXISTS system_state (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_temp_query 
+                ON temperature_samples(sensor_type, recorded_at);
 
                 CREATE INDEX IF NOT EXISTS idx_schedule_date 
                 ON daily_schedules(schedule_date);
                 """
             )
+            # Migración no destructiva si la columna no existía
+            cols = [r["name"] for r in conn.execute("PRAGMA table_info(temperature_samples)").fetchall()]
+            if "sensor_type" not in cols:
+                conn.execute("ALTER TABLE temperature_samples ADD COLUMN sensor_type TEXT NOT NULL DEFAULT 'water'")
 
-    def record_temperature(self, temp: float, dt: datetime | None = None) -> None:
-        """Registra una lectura de temperatura con timestamp en zona horaria local."""
+    def record_temperature(self, temp: float, sensor_type: str = "water", dt: datetime | None = None) -> None:
+        """Registra una lectura térmica indicando si proviene de 'water' o 'air'."""
         now = dt or datetime.now(self.tz)
         with self._get_connection() as conn:
             conn.execute(
-                "INSERT INTO temperature_samples (recorded_at, temperature) VALUES (?, ?)",
-                (now.isoformat(), round(temp, 2)),
+                "INSERT INTO temperature_samples (recorded_at, temperature, sensor_type) VALUES (?, ?, ?)",
+                (now.isoformat(), round(temp, 2), sensor_type),
             )
 
-    def get_min_temperature_for_day(self, target_date: date | None = None) -> float | None:
-        """Calcula la temperatura mínima registrada durante una fecha determinada (00:00 a 23:59)."""
+    def get_temperature_extrema_for_day(
+        self, sensor_type: str = "water", target_date: date | None = None
+    ) -> tuple[float | None, float | None]:
+        """Devuelve (min, max) de un tipo de sensor para una fecha concreta (00:00 a 23:59)."""
         day = target_date or datetime.now(self.tz).date()
         day_str = day.isoformat()
         start_iso = f"{day_str}T00:00:00"
@@ -72,24 +85,25 @@ class Repository:
         with self._get_connection() as conn:
             row = conn.execute(
                 """
-                SELECT MIN(temperature) AS min_temp
+                SELECT MIN(temperature) AS min_val, MAX(temperature) AS max_val
                 FROM temperature_samples
-                WHERE recorded_at BETWEEN ? AND ?
+                WHERE sensor_type = ? AND recorded_at BETWEEN ? AND ?
                 """,
-                (start_iso, end_iso),
+                (sensor_type, start_iso, end_iso),
             ).fetchone()
 
-        if row and row["min_temp"] is not None:
-            return float(row["min_temp"])
-        return None
+        if row and row["min_val"] is not None:
+            return float(row["min_val"]), float(row["max_val"])
+        return None, None
 
-    def save_daily_schedule(
-        self, target_date: date, intervals: list[TimeInterval]
-    ) -> None:
-        """Almacena el conjunto de intervalos programados para un día (reemplazando anteriores)."""
+    def get_min_temperature_for_day(self, target_date: date | None = None) -> float | None:
+        """Compatibilidad retroactiva: devuelve la mínima de agua registrada."""
+        min_temp, _ = self.get_temperature_extrema_for_day("water", target_date)
+        return min_temp
+
+    def save_daily_schedule(self, target_date: date, intervals: list[TimeInterval]) -> None:
         date_str = target_date.isoformat()
         now_str = datetime.now(self.tz).isoformat()
-
         with self._get_connection() as conn:
             conn.execute("DELETE FROM daily_schedules WHERE schedule_date = ?", (date_str,))
             conn.executemany(
@@ -97,64 +111,40 @@ class Repository:
                 INSERT INTO daily_schedules (schedule_date, start_hour, end_hour, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                [
-                    (date_str, interval.start_hour, interval.end_hour, now_str)
-                    for interval in intervals
-                ],
+                [(date_str, i.start_hour, i.end_hour, now_str) for i in intervals],
             )
 
     def get_schedule_for_date(self, target_date: date) -> list[TimeInterval]:
-        """Recupera los tramos de filtración asignados a una fecha."""
         date_str = target_date.isoformat()
         with self._get_connection() as conn:
             rows = conn.execute(
-                """
-                SELECT start_hour, end_hour
-                FROM daily_schedules
-                WHERE schedule_date = ?
-                ORDER BY start_hour ASC
-                """,
+                "SELECT start_hour, end_hour FROM daily_schedules WHERE schedule_date = ? ORDER BY start_hour ASC",
                 (date_str,),
             ).fetchall()
-
-        return [
-            TimeInterval(start_hour=row["start_hour"], end_hour=row["end_hour"])
-            for row in rows
-        ]
+        return [TimeInterval(start_hour=r["start_hour"], end_hour=r["end_hour"]) for r in rows]
 
     def is_pump_scheduled(self, dt: datetime | None = None) -> bool:
-        """Evalúa si la bomba debe estar activa en el minuto/hora actual."""
         current_dt = dt or datetime.now(self.tz)
         date_str = current_dt.date().isoformat()
         current_hour = current_dt.hour
-
         with self._get_connection() as conn:
             row = conn.execute(
                 """
                 SELECT 1 FROM daily_schedules
-                WHERE schedule_date = ?
-                  AND ? >= start_hour
-                  AND ? < end_hour
+                WHERE schedule_date = ? AND ? >= start_hour AND ? < end_hour
                 LIMIT 1
                 """,
                 (date_str, current_hour, current_hour),
             ).fetchone()
-
         return row is not None
 
     def get_system_state(self, key: str, default: str = "") -> str:
         with self._get_connection() as conn:
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT)"
-            )
             row = conn.execute("SELECT value FROM system_state WHERE key = ?", (key,)).fetchone()
             return row["value"] if row else default
 
     def set_system_state(self, key: str, value: str) -> None:
         with self._get_connection() as conn:
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT)"
-            )
             conn.execute(
                 "INSERT INTO system_state (key, value) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",

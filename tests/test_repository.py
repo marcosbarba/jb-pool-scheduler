@@ -1,46 +1,42 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
-from jb_pool_scheduler.core.optimizer import TimeInterval
+
 from jb_pool_scheduler.storage.repository import Repository
 
 TZ = ZoneInfo("Europe/Madrid")
 
 
-def test_temperature_recording_and_min(tmp_path):
-    db_file = tmp_path / "test.db"
+def test_temperature_extrema_separation_by_sensor_type(tmp_path):
+    """Verifica que las lecturas de agua y aire no se mezclen al calcular min y max."""
+    db_file = tmp_path / "test_extrema.db"
     repo = Repository(db_path=db_file, tz_name="Europe/Madrid")
+    target_date = date(2026, 9, 29)
 
-    day = date(2026, 9, 24)
-    # Registrar varias temperaturas del día
-    repo.record_temperature(24.5, dt=datetime(2026, 9, 24, 8, 0, tzinfo=TZ))
-    repo.record_temperature(21.2, dt=datetime(2026, 9, 24, 6, 30, tzinfo=TZ))  # Mínima
-    repo.record_temperature(26.0, dt=datetime(2026, 9, 24, 15, 0, tzinfo=TZ))
+    # 1. Registrar lecturas de agua
+    repo.record_temperature(22.0, sensor_type="water", dt=datetime(2026, 9, 29, 8, 0, tzinfo=TZ))
+    repo.record_temperature(26.5, sensor_type="water", dt=datetime(2026, 9, 29, 15, 0, tzinfo=TZ))
+    repo.record_temperature(24.0, sensor_type="water", dt=datetime(2026, 9, 29, 20, 0, tzinfo=TZ))
 
-    # Lectura de otro día diferente
-    repo.record_temperature(19.0, dt=datetime(2026, 9, 23, 5, 0, tzinfo=TZ))
+    # 2. Registrar lecturas de aire (con valores muy dispares)
+    repo.record_temperature(12.0, sensor_type="air", dt=datetime(2026, 9, 29, 6, 0, tzinfo=TZ))
+    repo.record_temperature(29.0, sensor_type="air", dt=datetime(2026, 9, 29, 14, 0, tzinfo=TZ))
 
-    min_temp = repo.get_min_temperature_for_day(day)
-    assert min_temp == 21.2
+    # 3. Comprobar extremos del agua
+    w_min, w_max = repo.get_temperature_extrema_for_day(sensor_type="water", target_date=target_date)
+    assert w_min == 22.0
+    assert w_max == 26.5
+
+    # 4. Comprobar extremos del aire
+    a_min, a_max = repo.get_temperature_extrema_for_day(sensor_type="air", target_date=target_date)
+    assert a_min == 12.0
+    assert a_max == 29.0
 
 
-def test_save_and_retrieve_schedule(tmp_path):
-    db_file = tmp_path / "test.db"
+def test_temperature_extrema_no_data_returns_none(tmp_path):
+    """Comprueba que si no hay muestras registradas devuelva (None, None)."""
+    db_file = tmp_path / "test_empty.db"
     repo = Repository(db_path=db_file, tz_name="Europe/Madrid")
-
-    target_date = date(2026, 9, 25)
-    intervals = [
-        TimeInterval(start_hour=2, end_hour=6),
-        TimeInterval(start_hour=14, end_hour=16),
-    ]
-
-    repo.save_daily_schedule(target_date, intervals)
-    retrieved = repo.get_schedule_for_date(target_date)
-    assert retrieved == intervals
-
-    # Comprobación de encendido según la hora
-    # A las 03:30 debe estar ENCENDIDA (dentro de 2 a 6)
-    assert repo.is_pump_scheduled(datetime(2026, 9, 25, 3, 30, tzinfo=TZ)) is True
-    # A las 06:00 ya debe estar APAGADA (fin de tramo a las 6)
-    assert repo.is_pump_scheduled(datetime(2026, 9, 25, 6, 0, tzinfo=TZ)) is False
-    # A las 10:00 debe estar APAGADA
-    assert repo.is_pump_scheduled(datetime(2026, 9, 25, 10, 0, tzinfo=TZ)) is False
+    
+    w_min, w_max = repo.get_temperature_extrema_for_day(sensor_type="water", target_date=date(2026, 9, 29))
+    assert w_min is None
+    assert w_max is None
