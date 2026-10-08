@@ -5,9 +5,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from jb_pool_scheduler.clients.esios_client import PENINSULA_GEO_ID, EsiosClient
+from jb_pool_scheduler.clients.esios_client import (
+    PENINSULA_GEO_ID,
+    EsiosClient,
+    IncompletePricesError,
+)
 from jb_pool_scheduler.clients.tuya_client import TuyaClient
 from jb_pool_scheduler.config import Settings
+from jb_pool_scheduler.planner import fetch_prices_with_retry
 
 
 @pytest.fixture
@@ -60,27 +65,59 @@ def test_tuya_set_pump_status_idempotent(base_settings):
             mock_post.assert_not_called()
 
 
-def test_esios_pvpc_parsing_and_geo_filter(base_settings):
-    """Verifica que ESIOS filtre solo la Península (8741) y descarte Canarias o Baleares."""
-    client = EsiosClient(base_settings)
-    mock_payload = {
-        "indicator": {
-            "values": [
-                {"value": 55.0, "datetime": "2026-09-30T00:00:00+02:00", "geo_id": PENINSULA_GEO_ID},
-                {"value": 75.0, "datetime": "2026-09-30T00:00:00+02:00", "geo_id": 8742},  # Descartar
-                {"value": 45.0, "datetime": "2026-09-30T01:00:00+02:00", "geo_id": PENINSULA_GEO_ID},
-            ]
-        }
-    }
+def _esios_payload(prices: list[float], extra_geo: bool = False) -> dict:
+    values = [
+        {"value": p, "datetime": f"2026-09-30T{h:02d}:00:00+02:00", "geo_id": PENINSULA_GEO_ID}
+        for h, p in enumerate(prices)
+    ]
+    if extra_geo:
+        values.append({"value": 75.0, "datetime": "2026-09-30T00:00:00+02:00", "geo_id": 8742})
+    return {"indicator": {"values": values}}
 
+
+def _fetch_esios(base_settings, payload):
     with patch("httpx.Client.get") as mock_get:
         resp = MagicMock()
         resp.status_code = 200
-        resp.json.return_value = mock_payload
+        resp.json.return_value = payload
         mock_get.return_value = resp
+        return EsiosClient(base_settings).get_pvpc_prices_for_date(date(2026, 9, 30))
 
-        prices = client.get_pvpc_prices_for_date(date(2026, 9, 30))
 
-        assert len(prices) == 2
-        assert prices[0] == 55.0
-        assert prices[1] == 45.0
+def test_esios_pvpc_parsing_and_geo_filter(base_settings):
+    """Verifica que ESIOS filtre solo la Península (8741) y descarte Canarias o Baleares."""
+    prices = _fetch_esios(base_settings, _esios_payload([50.0 + h for h in range(24)], extra_geo=True))
+
+    assert len(prices) == 24
+    assert prices[0] == 50.0
+    assert prices[23] == 73.0
+
+
+def test_esios_rejects_incomplete_day(base_settings):
+    with pytest.raises(IncompletePricesError):
+        _fetch_esios(base_settings, _esios_payload([55.0, 45.0, 60.0]))
+
+
+def test_esios_rejects_flat_prices(base_settings):
+    with pytest.raises(IncompletePricesError):
+        _fetch_esios(base_settings, _esios_payload([100.0] * 24))
+
+
+def test_planner_retries_until_prices_complete():
+    esios = MagicMock()
+    esios.get_pvpc_prices_for_date.side_effect = [IncompletePricesError("parcial"), {0: 1.0}]
+
+    with patch("jb_pool_scheduler.planner.time.sleep") as sleep:
+        prices = fetch_prices_with_retry(esios, date(2026, 9, 30), retries=3, wait_seconds=1)
+
+    assert prices == {0: 1.0}
+    sleep.assert_called_once_with(1)
+
+
+def test_planner_gives_up_after_retries():
+    esios = MagicMock()
+    esios.get_pvpc_prices_for_date.side_effect = IncompletePricesError("parcial")
+
+    with patch("jb_pool_scheduler.planner.time.sleep"), pytest.raises(IncompletePricesError):
+        fetch_prices_with_retry(esios, date(2026, 9, 30), retries=2, wait_seconds=1)
+    assert esios.get_pvpc_prices_for_date.call_count == 3

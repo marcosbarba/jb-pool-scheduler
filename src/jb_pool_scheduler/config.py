@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     NETATMO_STATION_MAC: str = Field(..., description="MAC de la estación exterior Netatmo")
 
     # Antihielo
-    ANTIFREEZE_TEMP_THRESHOLD: float = Field(default=1.0)
-    ANTIFREEZE_TEMP_HYSTERESIS: float = Field(default=2.0)
+    ANTIFREEZE_TEMP_THRESHOLD: float = Field(default=0)
+    ANTIFREEZE_TEMP_HYSTERESIS: float = Field(default=0)
 
     TELEGRAM_BOT_TOKEN: str = Field(..., description="Token del bot generado por @BotFather")
     TELEGRAM_CHAT_ID: str = Field(..., description="IDs de chats separados por comas")

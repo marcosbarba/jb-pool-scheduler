@@ -1,43 +1,29 @@
 """Regla heurística para calcular las horas de filtración según la temperatura del agua."""
 
+# Cada temperatura entera T de la tabla original representa el intervalo [T-0.5, T+0.5).
+# (umbral inferior inclusivo en °C, horas), de mayor a menor temperatura.
+_FILTRATION_THRESHOLDS: tuple[tuple[float, int], ...] = (
+    (30.5, 12),  # > 30
+    (29.5, 11),  # 30
+    (28.5, 10),  # 29
+    (27.5, 8),  # 28
+    (26.5, 7),  # 27
+    (25.5, 6),  # 26
+    (23.5, 5),  # 24 y 25
+    (21.5, 4),  # 22 y 23
+    (19.5, 3),  # 20 y 21
+    (14.5, 2),  # 15 a 19
+)
 
-def calculate_filtration_hours(min_temp: float) -> int:
-    """Calcula las horas diarias de depuración según la temperatura mínima registrada.
 
-    Tabla de correspondencia:
-    - >= 30 °C: 12 h
-    - >= 29 °C: 11 h
-    - >= 28 °C: 10 h
-    - >= 27 °C: 9 h
-    - >= 26 °C: 8 h
-    - >= 25 °C: 7 h
-    - >= 24 °C: 6 h
-    - >= 20 °C: 5 h (cubre 20, 21, 22 y 23 °C)
-    - >= 19 °C: 4 h
-    - >= 18 °C: 3 h
-    - >= 17 °C: 2 h
-    - <  17 °C: 1 h
+def calculate_filtration_hours(water_temp: float) -> int:
+    """Calcula las horas diarias de depuración según la temperatura del agua (media de mínima y máxima del día).
+
+    Tabla (temperatura redondeada -> horas), donde cada valor cubre [T-0.5, T+0.5):
+    - > 30: 12 h | 30: 11 h | 29: 10 h | 28: 8 h | 27: 7 h | 26: 6 h
+    - 24-25: 5 h | 22-23: 4 h | 20-21: 3 h | 15-19: 2 h | < 14.5 (<14): 1 h
     """
-    if min_temp >= 30.0:
-        return 12
-    if min_temp >= 29.0:
-        return 11
-    if min_temp >= 28.0:
-        return 10
-    if min_temp >= 27.0:
-        return 9
-    if min_temp >= 26.0:
-        return 8
-    if min_temp >= 25.0:
-        return 7
-    if min_temp >= 24.0:
-        return 6
-    if min_temp >= 20.0:
-        return 5
-    if min_temp >= 19.0:
-        return 4
-    if min_temp >= 18.0:
-        return 3
-    if min_temp >= 17.0:
-        return 2
+    for lower_bound, hours in _FILTRATION_THRESHOLDS:
+        if water_temp >= lower_bound:
+            return hours
     return 1

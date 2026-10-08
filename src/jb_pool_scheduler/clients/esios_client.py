@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 PENINSULA_GEO_ID = 8741
 
 
+class IncompletePricesError(ValueError):
+    """ESIOS respondió, pero los precios del día no están completos o no son fiables."""
+
+
 class EsiosClient:
     """Gestiona la consulta del indicador 1001 (PVPC) en api.esios.ree.es."""
 
@@ -54,7 +58,7 @@ class EsiosClient:
 
         values = data.get("indicator", {}).get("values", [])
         if not values:
-            raise ValueError(f"No hay precios disponibles en ESIOS para la fecha {date_str}")
+            raise IncompletePricesError(f"No hay precios disponibles en ESIOS para la fecha {date_str}")
 
         hourly_prices: dict[int, float] = {}
 
@@ -68,11 +72,18 @@ class EsiosClient:
             if dt.date() == target_date:
                 hourly_prices[dt.hour] = float(entry["value"])
 
+        logger.info("Precios ESIOS %s: %s", date_str, dict(sorted(hourly_prices.items())))
+
+        # Un día incompleto o con precios planos no sirve para optimizar: el desempate
+        # por orden de hora elegiría siempre las primeras horas del día.
         if len(hourly_prices) < 24:
-            logger.warning(
-                "ESIOS solo devolvió %d de 24 horas para %s (posible publicación incompleta).",
-                len(hourly_prices),
-                date_str,
+            raise IncompletePricesError(
+                f"ESIOS solo devolvió {len(hourly_prices)} de 24 horas para {date_str} "
+                "(posible publicación incompleta)."
+            )
+        if len(set(hourly_prices.values())) == 1:
+            raise IncompletePricesError(
+                f"ESIOS devolvió el mismo precio para las 24 horas de {date_str} (datos provisionales)."
             )
 
         return hourly_prices

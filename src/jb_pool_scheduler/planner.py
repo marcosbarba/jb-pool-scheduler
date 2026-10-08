@@ -3,12 +3,13 @@
 import argparse
 import logging
 import sys
+import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
 
-from jb_pool_scheduler.clients.esios_client import EsiosClient
+from jb_pool_scheduler.clients.esios_client import EsiosClient, IncompletePricesError
 from jb_pool_scheduler.clients.netatmo_client import NetatmoClient
 from jb_pool_scheduler.clients.telegram_client import TelegramClient
 from jb_pool_scheduler.clients.tuya_client import TuyaClient
@@ -25,7 +26,27 @@ logging.basicConfig(
 logger = logging.getLogger("planner")
 
 
-def run_planner(target_date: date | None = None, settings: Settings | None = None) -> None:
+def fetch_prices_with_retry(
+    esios: EsiosClient, plan_date: date, retries: int, wait_seconds: int
+) -> dict[int, float]:
+    """Descarga precios reintentando mientras ESIOS no tenga el día completo publicado."""
+    for attempt in range(retries + 1):
+        try:
+            return esios.get_pvpc_prices_for_date(plan_date)
+        except IncompletePricesError as exc:
+            if attempt == retries:
+                raise
+            logger.warning("%s Reintento %d/%d en %d s.", exc, attempt + 1, retries, wait_seconds)
+            time.sleep(wait_seconds)
+    raise AssertionError("inalcanzable")
+
+
+def run_planner(
+    target_date: date | None = None,
+    settings: Settings | None = None,
+    price_retries: int = 0,
+    retry_wait_seconds: int = 600,
+) -> None:
     """Ejecuta el ciclo completo de planificación para la fecha indicada (por defecto D+1)."""
     cfg = settings or get_settings()
     tz = ZoneInfo(cfg.TZ)
@@ -58,12 +79,12 @@ def run_planner(target_date: date | None = None, settings: Settings | None = Non
         except (httpx.HTTPError, KeyError, RuntimeError) as exc:
             logger.warning("No se pudo obtener temperatura del aire en Netatmo para el informe: %s", exc)
 
-    # 3. Heurística según la mínima del agua
-    target_hours = calculate_filtration_hours(w_min)
+    # 3. Heurística según la temperatura media del agua (media de mínima y máxima del día)
+    target_hours = calculate_filtration_hours((w_min + w_max) / 2)
 
     # 4. Descarga de precios y optimización
     if target_hours > 0:
-        prices = esios.get_pvpc_prices_for_date(plan_date)
+        prices = fetch_prices_with_retry(esios, plan_date, price_retries, retry_wait_seconds)
         intervals = get_cheapest_intervals(prices, target_hours)
     else:
         intervals = []
@@ -98,7 +119,8 @@ if __name__ == "__main__":
         parsed_target = date.fromisoformat(args.date)
 
     try:
-        run_planner(target_date=parsed_target)
+        # Desde cron se espera hasta ~1 h a que ESIOS publique el día completo
+        run_planner(target_date=parsed_target, price_retries=6)
     except Exception:
         logger.exception("Error crítico durante la planificación")
         sys.exit(1)

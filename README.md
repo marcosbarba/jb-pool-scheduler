@@ -2,7 +2,7 @@
 
 Sistema integral y automatizado para la optimización energética y control domótico de bombas de depuración de piscinas.
 
-El sistema calcula de forma dinámica las horas de filtración requeridas a partir de la temperatura mínima del agua (sonda en Tuya/Smart Life), selecciona las franjas horarias más económicas del mercado regulado español (**PVPC / ESIOS de Red Eléctrica de España**), gestiona la conmutación física del relé y cuenta con protección activa antihielo basada en la temperatura exterior (estación meteorológica Netatmo).
+El sistema calcula de forma dinámica las horas de filtración requeridas a partir de la temperatura media del agua (media de la mínima y la máxima del día) (sonda en Tuya/Smart Life), selecciona las franjas horarias más económicas del mercado regulado español (**PVPC / ESIOS de Red Eléctrica de España**), gestiona la conmutación física del relé y cuenta con protección activa antihielo basada en la temperatura exterior (estación meteorológica Netatmo).
 
 ---
 
@@ -10,7 +10,7 @@ El sistema calcula de forma dinámica las horas de filtración requeridas a part
 
 ```
 [20:45 CET Diariamente — planner.py]
-   ├── 1. SQLite Storage     ───> Consulta la temperatura mínima del agua registrada hoy
+   ├── 1. SQLite Storage     ───> Consulta la mínima y máxima del agua registradas hoy
    ├── 2. REE / ESIOS API    ───> Descarga los 24 precios PVPC para el día siguiente (D+1)
    ├── 3. Core Engine        ───> Heurística (horas requeridas) + Optimizador (franjas mínimas)
    ├── 4. SQLite Storage     ───> Persiste el horario óptimo en data/pool_schedule.db
@@ -31,22 +31,21 @@ El sistema calcula de forma dinámica las horas de filtración requeridas a part
 
 ### 1. Escala Heurística de Filtración (Agua)
 
-Las horas diarias de depuración se determinan a partir de la temperatura mínima registrada del agua:
+Las horas diarias de depuración se determinan a partir de la temperatura media del agua, calculada como (mínima + máxima) / 2 del día. Cada temperatura de la tabla representa el intervalo $[T-0.5,\ T+0.5)$ (p. ej. 24 °C cubre $[23.5, 24.5)$):
 
 | Temperatura del Agua ($T$) | Horas Asignadas |
 | :--- | :--- |
-| $T \ge 30^\circ\text{C}$ | 12 h |
-| $T \ge 29^\circ\text{C}$ | 11 h |
-| $T \ge 28^\circ\text{C}$ | 10 h |
-| $T \ge 27^\circ\text{C}$ | 9 h |
-| $T \ge 26^\circ\text{C}$ | 8 h |
-| $T \ge 25^\circ\text{C}$ | 7 h |
-| $T \ge 24^\circ\text{C}$ | 6 h |
-| $20^\circ\text{C} \le T < 24^\circ\text{C}$ | 5 h |
-| $T \ge 19^\circ\text{C}$ | 4 h |
-| $T \ge 18^\circ\text{C}$ | 3 h |
-| $T \ge 17^\circ\text{C}$ | 2 h |
-| $T < 17^\circ\text{C}$ | 1 h |
+| $T \ge 30.5^\circ\text{C}$ (> 30) | 12 h |
+| $29.5 \le T < 30.5$ (30) | 11 h |
+| $28.5 \le T < 29.5$ (29) | 10 h |
+| $27.5 \le T < 28.5$ (28) | 8 h |
+| $26.5 \le T < 27.5$ (27) | 7 h |
+| $25.5 \le T < 26.5$ (26) | 6 h |
+| $23.5 \le T < 25.5$ (24-25) | 5 h |
+| $21.5 \le T < 23.5$ (22-23) | 4 h |
+| $19.5 \le T < 21.5$ (20-21) | 3 h |
+| $14.5 \le T < 19.5$ (15-19) | 2 h |
+| $T < 14.5^\circ\text{C}$ (< 14) | 1 h |
 
 ### 2. Algoritmo de Optimización Horaria
 1. Obtiene los 24 precios horarios del PVPC (mercado peninsular, `geo_id: 8741`).
@@ -54,8 +53,8 @@ Las horas diarias de depuración se determinan a partir de la temperatura mínim
 3. Reordena cronológicamente y fusiona horas consecutivas adyacentes en intervalos continuos (`[start_hour, end_hour]`).
 
 ### 3. Protección Antihielo e Histéresis
-* **Activación:** Si la temperatura del aire exterior (Netatmo) desciende hasta $\le \text{ANTIFREEZE\_TEMP\_THRESHOLD}$ (por defecto $1.0^\circ\text{C}$), se ignora el plan horario y la bomba se enciende continuamente. Se emite una alerta crítica por Telegram.
-* **Recuperación:** La bomba regresa a la disciplina del plan económico únicamente cuando la temperatura sube por encima de $\ge \text{ANTIFREEZE\_TEMP\_HYSTERESIS}$ (por defecto $2.0^\circ\text{C}$), evitando ciclos intermitentes de encendido/apagado.
+* **Activación:** Si la temperatura del aire exterior (Netatmo) desciende hasta $\le \text{ANTIFREEZE\_TEMP\_THRESHOLD}$ (por defecto $0.0^\circ\text{C}$), se ignora el plan horario y la bomba se enciende continuamente. Se emite una alerta crítica por Telegram.
+* **Recuperación:** La bomba regresa a la disciplina del plan económico únicamente cuando la temperatura sube por encima de $\ge \text{ANTIFREEZE\_TEMP\_HYSTERESIS}$ (por defecto $0.0^\circ\text{C}$), evitando ciclos intermitentes de encendido/apagado.
 
 ---
 
