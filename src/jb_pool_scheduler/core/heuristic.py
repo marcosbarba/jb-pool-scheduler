@@ -17,11 +17,10 @@ _FILTRATION_THRESHOLDS: tuple[tuple[float, int], ...] = (
 
 
 def calculate_filtration_hours(water_temp: float) -> int:
-    """Calcula las horas diarias de depuración según la temperatura del agua (media de mínima y máxima del día).
+    """Calcula las horas diarias de depuración según la temperatura del agua.
 
-    Tabla (temperatura redondeada -> horas), donde cada valor cubre [T-0.5, T+0.5):
-    - > 30: 12 h | 30: 11 h | 29: 10 h | 28: 8 h | 27: 7 h | 26: 6 h
-    - 24-25: 5 h | 22-23: 4 h | 20-21: 3 h | 15-19: 2 h | < 14.5 (<14): 1 h
+    Se espera la media de mínima y máxima del día. La correspondencia está en
+    `_FILTRATION_THRESHOLDS` (umbral inferior inclusivo); por debajo del último, 1 h.
     """
     for lower_bound, hours in _FILTRATION_THRESHOLDS:
         if water_temp >= lower_bound:

@@ -31,21 +31,7 @@ El sistema calcula de forma dinámica las horas de filtración requeridas a part
 
 ### 1. Escala Heurística de Filtración (Agua)
 
-Las horas diarias de depuración se determinan a partir de la temperatura media del agua, calculada como (mínima + máxima) / 2 del día. Cada temperatura de la tabla representa el intervalo $[T-0.5,\ T+0.5)$ (p. ej. 24 °C cubre $[23.5, 24.5)$):
-
-| Temperatura del Agua ($T$) | Horas Asignadas |
-| :--- | :--- |
-| $T \ge 30.5^\circ\text{C}$ (> 30) | 12 h |
-| $29.5 \le T < 30.5$ (30) | 11 h |
-| $28.5 \le T < 29.5$ (29) | 10 h |
-| $27.5 \le T < 28.5$ (28) | 8 h |
-| $26.5 \le T < 27.5$ (27) | 7 h |
-| $25.5 \le T < 26.5$ (26) | 6 h |
-| $23.5 \le T < 25.5$ (24-25) | 5 h |
-| $21.5 \le T < 23.5$ (22-23) | 4 h |
-| $19.5 \le T < 21.5$ (20-21) | 3 h |
-| $14.5 \le T < 19.5$ (15-19) | 2 h |
-| $T < 14.5^\circ\text{C}$ (< 14) | 1 h |
+Las horas diarias de depuración se determinan a partir de la temperatura media del agua, calculada como (mínima + máxima) / 2 del día. La tabla de correspondencia vive en `_FILTRATION_THRESHOLDS` ([heuristic.py](src/jb_pool_scheduler/core/heuristic.py)), con umbrales inferiores inclusivos. Cada temperatura entera de la tabla original del experto representa el intervalo $[T-0.5,\ T+0.5)$ (p. ej. 24 °C cubre $[23.5, 24.5)$). La temperatura por debajo del último umbral asigna 1 h.
 
 ### 2. Algoritmo de Optimización Horaria
 1. Obtiene los 24 precios horarios del PVPC (mercado peninsular, `geo_id: 8741`).

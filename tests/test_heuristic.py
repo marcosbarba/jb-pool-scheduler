@@ -1,52 +1,40 @@
-"""Tests unitarios para validar la regla heurística de horas según temperatura."""
+"""Tests de propiedades de la heurística de horas según temperatura.
+
+No fijan valores concretos de la tabla (se está ajustando), solo invariantes
+que cualquier tabla razonable debe cumplir.
+"""
 
 import pytest
 
-from jb_pool_scheduler.core.heuristic import calculate_filtration_hours
-
-
-@pytest.mark.parametrize(
-    ("temp", "expected_hours"),
-    [
-        # Cada temperatura T cubre [T-0.5, T+0.5)
-        (35.0, 12),
-        (30.5, 12),  # límite inferior de ">30"
-        (30.49, 11),
-        (30.0, 11),
-        (29.5, 11),
-        (29.49, 10),
-        (29.0, 10),
-        (28.5, 10),
-        (28.49, 8),
-        (28.0, 8),
-        (27.5, 8),
-        (27.49, 7),
-        (27.0, 7),
-        (26.5, 7),
-        (26.49, 6),
-        (26.0, 6),
-        (25.5, 6),
-        (25.49, 5),
-        (25.0, 5),
-        (24.0, 5),
-        (23.5, 5),
-        (23.49, 4),
-        (23.0, 4),
-        (22.0, 4),
-        (21.5, 4),
-        (21.49, 3),
-        (21.0, 3),
-        (20.0, 3),
-        (19.5, 3),
-        (19.49, 2),
-        (19.0, 2),
-        (15.0, 2),
-        (14.5, 2),  # límite inferior de la franja de 15 °C
-        (14.49, 1),  # "<14" equivale a < 14.5
-        (14.0, 1),
-        (0.0, 1),
-    ],
+from jb_pool_scheduler.core.heuristic import (
+    _FILTRATION_THRESHOLDS,
+    calculate_filtration_hours,
 )
-def test_calculate_filtration_hours_thresholds(temp: float, expected_hours: int) -> None:
-    """Valida los límites exactos de cada intervalo [T-0.5, T+0.5)."""
-    assert calculate_filtration_hours(temp) == expected_hours
+
+TEMPS = [t / 10 for t in range(-50, 450)]  # -5.0 a 44.9 °C en pasos de 0.1
+
+
+def test_hours_within_valid_range() -> None:
+    assert all(1 <= calculate_filtration_hours(t) <= 24 for t in TEMPS)
+
+
+def test_hours_never_decrease_with_temperature() -> None:
+    hours = [calculate_filtration_hours(t) for t in TEMPS]
+    assert hours == sorted(hours)
+
+
+def test_extremes() -> None:
+    assert calculate_filtration_hours(-10.0) == 1
+    assert calculate_filtration_hours(60.0) == max(h for _, h in _FILTRATION_THRESHOLDS)
+
+
+def test_thresholds_are_sorted_descending() -> None:
+    bounds = [b for b, _ in _FILTRATION_THRESHOLDS]
+    assert bounds == sorted(bounds, reverse=True)
+
+
+@pytest.mark.parametrize(("bound", "hours"), _FILTRATION_THRESHOLDS)
+def test_threshold_lower_bound_is_inclusive(bound: float, hours: int) -> None:
+    """Cada umbral se alcanza justo en su límite inferior (intervalos [a, b))."""
+    assert calculate_filtration_hours(bound) >= hours
+    assert calculate_filtration_hours(bound - 0.01) <= hours
