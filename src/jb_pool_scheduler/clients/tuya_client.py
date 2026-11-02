@@ -32,17 +32,17 @@ class TuyaClient:
         return response.get("result", [])
 
     def get_water_temperature(self) -> float:
-            """Consulta la sonda y devuelve la temperatura medida por el sensor interno (temp_current)."""
-            statuses = self.get_device_status(self.settings.TUYA_TEMP_DEVICE_ID)
-            status_map = {item.get("code"): item.get("value") for item in statuses}
+        """Consulta la sonda y devuelve la temperatura del agua (sonda externa, temp_current_external)."""
+        statuses = self.get_device_status(self.settings.TUYA_TEMP_DEVICE_ID)
+        status_map = {item.get("code"): item.get("value") for item in statuses}
 
-            if "temp_current" not in status_map or status_map["temp_current"] is None:
-                raise KeyError(
-                    f"No se encontró 'temp_current' en los datos de la sonda: {statuses}"
-                )
+        if status_map.get("temp_current_external") is None:
+            raise KeyError(
+                f"No se encontró 'temp_current_external' en los datos de la sonda: {statuses}"
+            )
 
-            # El dispositivo devuelve enteros multiplicados por 10 (ej: 250 -> 25.0 °C)
-            return float(status_map["temp_current_external"]) / 10.0
+        # El dispositivo devuelve enteros multiplicados por 10 (ej: 250 -> 25.0 °C)
+        return float(status_map["temp_current_external"]) / 10.0
 
     def get_pump_status(self) -> bool:
         """Devuelve True si el interruptor de la depuradora está encendido, False si está apagado."""

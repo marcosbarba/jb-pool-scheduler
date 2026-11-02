@@ -51,6 +51,17 @@ def test_tuya_get_water_temperature_scaling(base_settings):
             assert temp == 24.5
 
 
+def test_tuya_water_temperature_requires_external_probe(base_settings):
+    """Sin la sonda externa no debe devolverse el sensor interno ni fallar con KeyError opaco."""
+    with patch("jb_pool_scheduler.clients.tuya_client.TuyaOpenAPI"):
+        client = TuyaClient(base_settings)
+        with (
+            patch.object(client, "get_device_status", return_value=[{"code": "temp_current", "value": 240}]),
+            pytest.raises(KeyError, match="temp_current_external"),
+        ):
+            client.get_water_temperature()
+
+
 def test_tuya_set_pump_status_idempotent(base_settings):
     """Si la bomba ya está en el estado deseado, no debe llamar al comando POST."""
     with patch("jb_pool_scheduler.clients.tuya_client.TuyaOpenAPI"):
